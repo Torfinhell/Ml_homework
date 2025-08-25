@@ -1,6 +1,6 @@
 # Ml_homework
 ## This are homeworks of courses I passed or am passing at the moment
-###Course Depth Vision and Graphics in ysda
+### Course Depth Vision and Graphics in ysda
 #### Still need to do
 #### 1)Demosaicing
 #### 2)Prokudin-Gorsky
