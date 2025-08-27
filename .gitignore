@@ -2,3 +2,9 @@ Depth_Vision_and_Graphics/**/run.py
 Depth_Vision_and_Graphics/**/build.sh
 Depth_Vision_and_Graphics/**/additonal_files/**
 Depth_Vision_and_Graphics/**/public_tests/**
+Depth_Vision_and_Graphics/**/tests/**
+Depth_Vision_and_Graphics/**/test/**
+Depth_Vision_and_Graphics/**/.ipynb_checkpoints/**
+Depth_Vision_and_Graphics/**/.__pycache__/**
+Depth_Vision_and_Graphics/**/.__pycache__/**
+
