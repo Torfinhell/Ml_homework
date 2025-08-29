@@ -17,7 +17,7 @@ def get_bayer_masks(n_rows, n_cols):
     blue_mask[1::2,::2]=1
     return np.dstack((red_mask, green_mask, blue_mask))
 
-def get_colored_img(raw_img):
+def get_colored_img(raw_img, dtype="uint8"):
     """
     :param raw_img:
         `np.array` of shape `(n_rows, n_cols)` and dtype `np.uint8`,
@@ -28,7 +28,7 @@ def get_colored_img(raw_img):
         each channel contains known color values or zeros
         depending on Bayer masks
     """
-    gt_masks=get_bayer_masks(*raw_img.shape).astype(dtype="uint8")
+    gt_masks=get_bayer_masks(*raw_img.shape).astype(dtype=dtype)
     return raw_img[..., np.newaxis]*gt_masks
 
 
@@ -64,7 +64,7 @@ def apply_filter(img, filter):
     new_img=(windows*np.transpose(filter, (2, 0, 1))).sum(axis=(3,4))
     return new_img
             
-def bilinear_interpolation(raw_img):
+def bilinear_interpolation(raw_img, dtype="uint8"):
     """
     :param raw_img:
         `np.array` of shape `(n_rows, n_cols)` and dtype `np.uint8`,
@@ -75,14 +75,14 @@ def bilinear_interpolation(raw_img):
         result of bilinear interpolation
     """
     h, w=raw_img.shape
-    colored_img=get_colored_img(raw_img)
+    colored_img=get_colored_img(raw_img, dtype)
     sum=apply_filter(colored_img, np.ones((3, 3, 3)))
     red_mask, green_mask, blue_mask=np.dsplit(get_bayer_masks(h, w), 3)
     green_mask=green_mask.squeeze()
     sum[green_mask]//=2
     sum[~green_mask]//=4
     sum[get_bayer_masks(h, w)]=colored_img[get_bayer_masks(h, w)]
-    return sum.astype("uint8")
+    return sum.astype(dtype)
     
     
 
@@ -95,7 +95,7 @@ def improved_interpolation(raw_img):
         `np.array` of shape `(n_rows, n_cols, 3)` and dtype `np.uint8`,
         result of improved interpolation
     """
-    G_at_R=np.array(#G at R locations
+    G_at_R=np.array(
         [[0, 0, -1/4, 0, 0],
         [0, 0, 0, 0, 0],
         [-1/4, 0, 1, 0, -1/4],
@@ -103,8 +103,8 @@ def improved_interpolation(raw_img):
         [0, 0, -1/4, 0, 0]],
         dtype=np.float32
     )
-    G_at_B=G_at_R#G at B locations
-    R_at_G_in_R_B=np.array(#R at green in R row, B column
+    G_at_B=G_at_R[:]
+    R_at_G_in_R_B=np.array(
         [[0, 0, 1/10, 0, 0],
         [0, -1/5, 0, -1/5, 0],
         [-1/5, 0, 1, 0, -1/5],
@@ -112,8 +112,8 @@ def improved_interpolation(raw_img):
         [0, 0, 1/10, 0, 0]],
         dtype=np.float32
     )
-    R_at_G_in_B_R=R_at_G_in_R_B.T#R at green in B row, R column
-    R_at_B=np.array( #R at blue in B row, B column
+    R_at_G_in_B_R=R_at_G_in_R_B[:].T
+    R_at_B=np.array( 
         [[0,0,-3/12, 0,0],
         [0, 0, 0, 0,0],
         [-3/12, 0, 1, 0, -3/12],
@@ -121,30 +121,35 @@ def improved_interpolation(raw_img):
         [0, 0, -3/12, 0, 0]],
         dtype=np.float32
     )
-    B_at_G_in_B_R=G_at_R#B at green in B row, R column
-    B_at_G_in_R_B=G_at_R.T#B at green in R row, B column
-    B_at_R=R_at_B#B at red in R row, R column
+    B_at_G_in_B_R=R_at_G_in_R_B[:]
+    B_at_G_in_R_B=R_at_G_in_B_R[:]
+    B_at_R=R_at_B[:]
     h, w=raw_img.shape
-    colored_img=get_colored_img(raw_img).astype(np.float32)
+    colored_img=get_colored_img(raw_img,np.float32)
     red_mask, green_mask, blue_mask=np.dsplit(get_bayer_masks(h, w), 3)
     green_mask=green_mask.squeeze()
     red_mask=red_mask.squeeze()
-    green_mask=green_mask.squeeze()
+    blue_mask=blue_mask.squeeze()
     alpha=1/2
     beta=5/8
     gamma=3/4
     i, j=np.ogrid[:h, :w]
-    mask_at_R_B=(i%2+2*(j%2))==2
-    mask_at_B_R=(i%2+2*(j%2))==1
-    colored_img[1]+=alpha* apply_filter((colored_img*red_mask[..., np.newaxis])[...,0], G_at_R)*red_mask
-    colored_img[1]+=alpha* apply_filter((colored_img*blue_mask[..., np.newaxis])[...,2],G_at_B)*blue_mask
-    colored_img[0]+=beta*apply_filter((colored_img*mask_at_R_B[..., np.newaxis])[...,1], R_at_G_in_R_B)*mask_at_R_B
-    colored_img[0]+=beta* apply_filter((colored_img*mask_at_B_R[..., np.newaxis])[...,1], R_at_G_in_B_R)*mask_at_B_R
-    colored_img[0]+=beta* apply_filter((colored_img*blue_mask[..., np.newaxis])[...,2], R_at_B)*blue_mask
-    colored_img[2]+=gamma* apply_filter((colored_img*mask_at_B_R[..., np.newaxis])[...,1], B_at_G_in_B_R)*mask_at_B_R
-    colored_img[2]+=gamma* apply_filter((colored_img*mask_at_R_B[..., np.newaxis])[...,1], B_at_G_in_R_B)*mask_at_R_B
-    colored_img[2]+=beta* apply_filter((colored_img*red_mask[..., np.newaxis])[...,0], B_at_R)*red_mask
-    return colored_img
+    mask_at_R_B=(i%2+2*(j%2))==0
+    mask_at_B_R=(i%2+2*(j%2))==3
+    sum=apply_filter(colored_img, np.ones((3, 3, 3)))
+    sum[green_mask]/=2
+    sum[~green_mask]/=4
+    sum[get_bayer_masks(h, w)]=colored_img[get_bayer_masks(h, w)]
+    colored_img_new=sum
+    colored_img_new[...,1]+=alpha* apply_filter(colored_img[...,0]*red_mask, G_at_R).squeeze()*red_mask
+    colored_img_new[...,1]+=alpha* apply_filter(colored_img[...,2]*blue_mask, G_at_B).squeeze()*blue_mask
+    colored_img_new[...,0]+=beta*apply_filter(colored_img[..., 1], R_at_G_in_R_B).squeeze()*mask_at_R_B
+    colored_img_new[...,0]+=beta* apply_filter(colored_img[..., 1], R_at_G_in_B_R).squeeze()*mask_at_B_R
+    colored_img_new[...,0]+=gamma* apply_filter(colored_img[...,2]*blue_mask, R_at_B).squeeze()*blue_mask
+    colored_img_new[...,2]+=beta* apply_filter(colored_img[...,1], B_at_G_in_B_R).squeeze()*mask_at_B_R
+    colored_img_new[...,2]+=beta* apply_filter(colored_img[...,1], B_at_G_in_R_B).squeeze()*mask_at_R_B
+    colored_img_new[...,2]+=gamma* apply_filter(colored_img[...,0]*red_mask, B_at_R).squeeze()*red_mask
+    return np.clip(colored_img_new, 0, 255).astype(np.uint8)
 
 def compute_psnr(img_pred, img_gt):
     """
