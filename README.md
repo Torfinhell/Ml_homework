@@ -2,7 +2,6 @@
 ## This are homeworks of courses I passed or am passing at the moment
 ### Course Depth Vision and Graphics in ysda
 #### Still need to do
-#### Demosaicing
 #### Image Compression
 #### Deconvolution
 #### NN_Implementation
