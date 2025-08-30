@@ -1,5 +1,5 @@
 import numpy as np
-
+from scipy.fft import fft, ifft, fft2, ifft2, ifftshift
 
 def gaussian_kernel(size, sigma):
     """
@@ -9,10 +9,13 @@ def gaussian_kernel(size, sigma):
     @param  sigma float  параметр размытия
     @return numpy array  фильтр Гаусса размером size x size
     """
-    pass
+    i, j=np.ogrid[:size, :size]
+    x0, y0=(size-1)/2,(size-1)/2
+    A=1/(2*np.pi*sigma**2)*np.exp(-((i-x0)**2+(j-y0)**2)/(2*sigma**2))
+    return A/A.sum()
 
 
-def fourier_transform(h, shape):
+def fourier_transform(img, shape):
     """
     Получение Фурье-образа искажающей функции
 
@@ -20,7 +23,13 @@ def fourier_transform(h, shape):
     @param  shape        list         требуемый размер образа
     @return numpy array  H            Фурье-образ искажающей функции h
     """
-    pass
+    h, w = shape
+    prev_h, prev_w = img.shape[:2]
+    diff_h, diff_w = h - prev_h, w - prev_w
+
+    padding = [((diff_h + 1) // 2, diff_h // 2), ((diff_w + 1) // 2, diff_w // 2)]
+    new_img = np.pad(img, padding, mode="constant")
+    return fft2(ifftshift(new_img))
 
 
 def inverse_kernel(H, threshold=1e-10):
@@ -31,7 +40,9 @@ def inverse_kernel(H, threshold=1e-10):
     @param  threshold    float          порог отсечения для избежания деления на 0
     @return numpy array  H_inv
     """
-    pass
+    H[abs(H)<=threshold]=0
+    H[H!=0]=1/H[H!=0]
+    return H
 
 
 def inverse_filtering(blurred_img, h, threshold=1e-10):
@@ -43,10 +54,13 @@ def inverse_filtering(blurred_img, h, threshold=1e-10):
     @param  threshold      float        параметр получения H_inv
     @return numpy array                 восстановленное изображение
     """
-    pass
+    G=fft2(blurred_img)
+    H=fourier_transform(h, blurred_img.shape)
+    H_inv=inverse_kernel(H, threshold)
+    return np.abs(ifft2(G*H_inv))
 
 
-def wiener_filtering(blurred_img, h, K=0):
+def wiener_filtering(blurred_img, h, K=0.00005):
     """
     Винеровская фильтрация
 
@@ -55,7 +69,10 @@ def wiener_filtering(blurred_img, h, K=0):
     @param  K              float        константа из выражения (8)
     @return numpy array                 восстановленное изображение
     """
-    pass
+    G=fft2(blurred_img)
+    h_fft=fourier_transform(h, blurred_img.shape)
+    F=(np.conjugate(h_fft)/(np.conjugate(h_fft)*h_fft+K))*G
+    return np.abs(ifft2(F))
 
 
 def compute_psnr(img1, img2):
@@ -66,4 +83,5 @@ def compute_psnr(img1, img2):
     @param  img2    numpy array   искаженное изображение
     @return float   PSNR(img1, img2)
     """
-    pass
+    max_val = 255
+    return 20*np.log10(max_val/np.sqrt(((img1-img2)**2).mean()))
