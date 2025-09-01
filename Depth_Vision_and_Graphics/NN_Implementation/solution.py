@@ -20,9 +20,7 @@ class SGD(Optimizer):
 
             :return: np.array, new parameter values
             """
-            # your code here \/
-            return ...
-            # your code here /\
+            return parameter-self.lr*parameter_grad
 
         return updater
 
@@ -39,7 +37,6 @@ class SGDMomentum(Optimizer):
 
         :return: the updater function for that parameter
         """
-
         def updater(parameter, parameter_grad):
             """
             :param parameter: np.array, current parameter values
@@ -47,10 +44,8 @@ class SGDMomentum(Optimizer):
 
             :return: np.array, new parameter values
             """
-            # your code here \/
-            return ...
-            # your code here /\
-
+            updater.inertia=self.momentum*updater.inertia+self.lr*parameter_grad
+            return parameter-(updater.inertia)
         updater.inertia = np.zeros(parameter_shape)
         return updater
 
@@ -66,9 +61,10 @@ class ReLU(Layer):
             n - batch size
             ... - arbitrary shape (the same for input and output)
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        outputs=np.zeros(inputs.shape)
+        outputs[inputs>=0]=inputs[inputs>=0]
+        return outputs
+        
 
     def backward_impl(self, grad_outputs):
         """
@@ -79,9 +75,9 @@ class ReLU(Layer):
             n - batch size
             ... - arbitrary shape (the same for input and output)
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        derivatives=np.zeros(self.forward_inputs.shape)
+        derivatives[(self.forward_inputs>=0)]=1
+        return grad_outputs* derivatives
 
 
 # =============================== 2.1.2 Softmax ==============================
@@ -95,9 +91,9 @@ class Softmax(Layer):
             n - batch size
             d - number of units
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        shift_inputs=inputs-inputs.max(axis=-1, keepdims=True)
+        exp_input=np.exp(shift_inputs)
+        return (exp_input/exp_input.sum(axis=-1, keepdims=True)).astype(inputs.dtype)
 
     def backward_impl(self, grad_outputs):
         """
@@ -108,9 +104,10 @@ class Softmax(Layer):
             n - batch size
             d - number of units
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        def apply_func(x):
+            return np.diag(x)-np.outer(x, x)
+        interm_grad=np.apply_along_axis(apply_func, axis=-1, arr=self.forward_outputs)
+        return (grad_outputs[..., np.newaxis, :]*interm_grad).sum(axis=-1)
 
 
 # ================================ 2.1.3 Dense ===============================
@@ -157,9 +154,7 @@ class Dense(Layer):
             d - number of input units
             c - number of output units
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        return inputs@self.weights.T+self.biases
 
     def backward_impl(self, grad_outputs):
         """
@@ -171,9 +166,9 @@ class Dense(Layer):
             d - number of input units
             c - number of output units
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        self.weights_grad=grad_outputs.T @ self.forward_inputs
+        self.biases_grad=grad_outputs.sum(axis=0)
+        return grad_outputs @ self.weights
 
 
 # ============================ 2.2.1 Crossentropy ============================
@@ -188,9 +183,9 @@ class CategoricalCrossentropy(Loss):
             n - batch size
             d - number of units
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        epsilon = 1e-14
+        loss = -(y_gt * np.log(np.clip(y_pred, epsilon, 1))).sum(axis=-1).mean()
+        return np.array([loss])
 
     def gradient_impl(self, y_gt, y_pred):
         """
@@ -202,29 +197,33 @@ class CategoricalCrossentropy(Loss):
             n - batch size
             d - number of units
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        epsilon = 1/4.5036e+15
+        y_pred=np.clip(y_pred, epsilon, 1)
+        return  (-y_gt/y_pred)/y_pred[...,0].size
+        
 
 
 # ======================== 2.3 Train and Test on MNIST =======================
 def train_mnist_model(x_train, y_train, x_valid, y_valid):
     # your code here \/
     # 1) Create a Model
-    model = ...
+    model = Model(CategoricalCrossentropy(), SGDMomentum(0.01, 0.9))
 
     # 2) Add layers to the model
     #   (don't forget to specify the input shape for the first layer)
-    model.add(...)
-    model.add(...)
-    ...
-    model.add(...)
-    model.add(...)
-
+    first_layer=Dense(100)
+    first_layer.input_shape=(784,)
+    model.add(first_layer)
+    model.add(ReLU())
+    model.add(Dense(100))
+    model.add(ReLU())
+    model.add(Dense(10))
+    model.add(Softmax())
     print(model)
 
     # 3) Train and validate the model using the provided data
-    model.fit(...)
+    model.fit(x_train, y_train, batch_size=8, epochs=3, shuffle=True, verbose=1,
+               x_valid=x_valid, y_valid=y_valid) 
 
     # your code here /\
     return model
@@ -255,7 +254,7 @@ def convolve(inputs, kernels, padding=0):
     else:
         return convolve_numpy(inputs, kernels, padding)
 
-
+from numpy.lib.stride_tricks import sliding_window_view
 def convolve_numpy(inputs, kernels, padding):
     """
     :param inputs: np.array((n, d, ih, iw)), input values
@@ -270,9 +269,19 @@ def convolve_numpy(inputs, kernels, padding):
         (ih, iw) - input image shape
         (oh, ow) - output image shape
     """
-    # your code here \/
-    return ...
-    # your code here /\
+    n, d, ih, iw=inputs.shape
+    c, d, kh, kw=kernels.shape
+    input_padded=np.pad(inputs, ((0,0), (0,0), (padding, padding), (padding, padding)))
+    oh=input_padded.shape[-2]-kh+1
+    ow=input_padded.shape[-1]-kw+1
+    output=np.zeros((n, c,oh, ow ))
+    windows=sliding_window_view(input_padded, (kh, kw), axis=(-2, -1))
+    for i in range(c):
+        for j in range(d):
+            kernel=np.flip(kernels[i,j], axis=(-1, -2))
+            output[:,i]+=(windows[:, j]*kernel).sum(axis=(-2, -1))
+    return output
+
 
 
 # =============================== 4.1.1 Conv2D ===============================
@@ -319,9 +328,7 @@ class Conv2D(Layer):
             c - number of output channels
             (h, w) - image shape
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        return convolve(inputs, self.kernels, (self.kernel_size-1)//2)+self.biases[None, ..., None, None]
 
     def backward_impl(self, grad_outputs):
         """
@@ -333,12 +340,29 @@ class Conv2D(Layer):
             d - number of input channels
             c - number of output channels
             (h, w) - image shape
+        (n, d)*(c, d)=(n,c)
+        :param inputs: np.array((n, d, ih, iw)), input values
+        :param kernels: np.array((c, d, kh, kw)), convolution kernels
+        :param padding: int >= 0, the size of padding, 0 means 'valid'
+        :return: np.array((n, c, oh, ow)), output values
+        (c, n ,h, w)*((d, n, h, w))->(c, d, h, w)
+        (n,c)*(d, c)=(n,d)
         """
-        # your code here \/
-        return ...
-        # your code here /\
 
+        self.kernels_grad = np.flip(convolve(
+            np.flip(np.transpose(grad_outputs, (1, 0, 2, 3)), axis=(-1, -2)),         # (c, n, h, w)
+            np.transpose(self.forward_inputs, (1, 0, 2, 3)),  # (d, n, h, w)
+            padding=(self.kernel_size - 1) // 2
+        ), axis=(-1, -2))
+        self.biases_grad = grad_outputs.sum(axis=(0, 2, 3))  # shape: (c,)
+        grad_input = convolve(
+            grad_outputs,#(n, c, h, w)
+            np.flip(np.transpose(self.kernels, (1, 0, 2, 3)), axis=(-1, -2)),  # (d, c, kh, kw)
+            padding=(self.kernel_size - 1) // 2
+        )
+        return grad_input
 
+from einops import rearrange
 # ============================== 4.1.2 Pooling2D =============================
 class Pooling2D(Layer):
     def __init__(self, pool_size=2, pool_mode="max", *args, **kwargs):
@@ -351,7 +375,6 @@ class Pooling2D(Layer):
 
     def build(self, *args, **kwargs):
         super().build(*args, **kwargs)
-
         channels, input_h, input_w = self.input_shape
         output_h, rem_h = divmod(input_h, self.pool_size)
         output_w, rem_w = divmod(input_w, self.pool_size)
@@ -371,9 +394,16 @@ class Pooling2D(Layer):
             (ih, iw) - input image shape
             (oh, ow) - output image shape
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        windows=rearrange(inputs, 'n c (h1 p1) (w1 p2) -> n c h1 w1 (p1 p2)', p1=self.pool_size, p2=self.pool_size)
+        windows = np.asarray(windows)
+        if(self.pool_mode=="max"):
+            pool_window_size=self.pool_size ** 2
+            windows_raveled_indices = np.arange(windows.size//pool_window_size)
+            max_indices = np.argmax(windows, axis=-1)
+            self.max_ids_flattend = max_indices.flatten() + windows_raveled_indices * pool_window_size
+            return windows.max(axis= -1)
+        else:
+            return windows.mean(axis= -1)
 
     def backward_impl(self, grad_outputs):
         """
@@ -386,9 +416,16 @@ class Pooling2D(Layer):
             (ih, iw) - input image shape
             (oh, ow) - output image shape
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        pool_window_size=self.pool_size ** 2
+        grad_inputs = np.zeros(grad_outputs.shape+(self.pool_size, self.pool_size))
+        if(self.pool_mode=="avg"):
+            grad_inputs+=(1/pool_window_size) * grad_outputs[..., None, None]
+        else:
+            grad_inputs[np.unravel_index(self.max_ids_flattend, grad_inputs.shape)]=grad_outputs.flatten()
+        grad_inputs=rearrange(grad_inputs, 'n c h1 w1 p1 p2-> n c (h1 p1) (w1 p2)', p1=self.pool_size,p2=self.pool_size)
+        return grad_inputs
+        
+
 
 
 # ============================== 4.1.3 BatchNorm =============================
@@ -438,11 +475,16 @@ class BatchNorm(Layer):
         """
         # your code here \/
         if self.is_training:
-            ...
-        else:
-            ...
-        return ...
-        # your code here /\
+            mu, vu=inputs.mean(axis=(0,2,3)), inputs.var(axis=(0,2,3))
+            self.inv_std=1 / np.sqrt(vu[None, :, None, None]+eps)
+            self.centered_inputs=inputs-mu[None, :, None, None]
+            self.interm_normalized=self.centered_inputs*self.inv_std
+            self.n=inputs.shape[0] * inputs.shape[2] * inputs.shape[3]
+            self.running_mean=self.momentum*self.running_mean+(1-self.momentum)*mu
+            self.running_var=self.momentum*self.running_var+(1-self.momentum)*vu
+            return (self.gamma[None, :, None, None]*self.interm_normalized)+self.beta[None, :, None, None]
+        norm_inputs=(inputs-self.running_mean[None, :, None, None])/np.sqrt(self.running_var[None, :, None, None]+eps)
+        return (self.gamma[None, :, None, None]*norm_inputs)+self.beta[None, :, None, None]
 
     def backward_impl(self, grad_outputs):
         """
@@ -454,10 +496,17 @@ class BatchNorm(Layer):
             d - number of channels
             (h, w) - image shape
         """
-        # your code here \/
-        return ...
-        # your code here /\
-
+        self.beta_grad=grad_outputs.sum(axis=(0, 2, 3))
+        self.gamma_grad=(grad_outputs*self.interm_normalized).sum(axis=(0, 2, 3))
+        grad_interm = grad_outputs * self.gamma[None, :, None, None]
+        sum_grads=np.sum(grad_interm, axis=(0, 2, 3))
+        prev_grad = np.sum(grad_interm * self.interm_normalized, axis=(0, 2, 3))
+        grad_inputs = (1.0 / self.n) * self.inv_std * (
+            self.n * grad_interm - 
+            sum_grads[None, :, None, None] - 
+            self.interm_normalized * prev_grad[None, :, None, None]
+        )
+        return grad_inputs
 
 # =============================== 4.1.4 Flatten ==============================
 class Flatten(Layer):
@@ -476,9 +525,8 @@ class Flatten(Layer):
             d - number of input channels
             (h, w) - image shape
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        self.input_shape=inputs.shape[1:]
+        return inputs.reshape(inputs.shape[0], -1)
 
     def backward_impl(self, grad_outputs):
         """
@@ -490,9 +538,7 @@ class Flatten(Layer):
             d - number of units
             (h, w) - input image shape
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        return grad_outputs.reshape((-1,)+self.input_shape)
 
 
 # =============================== 4.1.5 Dropout ==============================
@@ -513,10 +559,10 @@ class Dropout(Layer):
         """
         # your code here \/
         if self.is_training:
-            ...
+            self.forward_mask=(np.random.uniform(0.0, 1.0, inputs.shape)>self.p)
+            return inputs* self.forward_mask
         else:
-            ...
-        return ...
+            return inputs * (1-self.p)
         # your code here /\
 
     def backward_impl(self, grad_outputs):
@@ -528,31 +574,37 @@ class Dropout(Layer):
             n - batch size
             ... - arbitrary shape (the same for input and output)
         """
-        # your code here \/
-        return ...
-        # your code here /\
+        return grad_outputs*self.forward_mask
 
 
 # ====================== 2.3 Train and Test on CIFAR-10 ======================
 def train_cifar10_model(x_train, y_train, x_valid, y_valid):
     # your code here \/
     # 1) Create a Model
-    model = ...
+    model = Model(CategoricalCrossentropy(), SGDMomentum(0.01, 0.9))
 
     # 2) Add layers to the model
     #   (don't forget to specify the input shape for the first layer)
-    model.add(...)
-    model.add(...)
-    ...
-    model.add(...)
-    model.add(...)
-
+    output_channel=3
+    layer=Conv2D(output_channel, 3)
+    layer.input_shape=(3, 32, 32)
+    model.add(layer)
+    for i in range(4):
+        output_channel*=2
+        model.add(Conv2D(output_channel, 3))
+        model.add(ReLU())
+        model.add(Conv2D(output_channel, 3))
+        model.add(BatchNorm())
+        model.add(Pooling2D(2, "max"))
+    model.add(Flatten((24, 2, 2)))
+    model.add(Dense(1024))
+    model.add(Dense(10))
+    model.add(Softmax())
     print(model)
 
     # 3) Train and validate the model using the provided data
-    model.fit(...)
+    model.fit(x_train, y_train, 16, 100, x_valid=x_valid, y_valid=y_valid)
 
-    # your code here /\
     return model
 
 
