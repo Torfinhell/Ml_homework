@@ -3,7 +3,6 @@
 ### Course Depth Vision and Graphics in ysda
 #### Still need to do
 #### Image Compression
-#### Face_Points
 #### Bird_classification
 #### Rare_Traffic_Signs
 #### Vehicle_Detector
