@@ -117,6 +117,8 @@ class CocoLvisDataset(ISDataset):
         self.stuff_prob = stuff_prob
         print(os.getcwd())
         print(self._split_path / anno_file, "rb")
+        p = Path("/kaggle/working/Ml_homework/Depth_Vision_and_Graphics/Interactive_Segmentation/COCO-LVIS/train/hannotation.pickle")
+        print(p.exists())
         with open(self._split_path / anno_file, "rb") as f:
             self.dataset_samples = sorted(pickle.load(f).items())
 
