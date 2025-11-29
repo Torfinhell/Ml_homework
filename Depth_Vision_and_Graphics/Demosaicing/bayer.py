@@ -55,7 +55,7 @@ def apply_filter(img, filter):
         img=img[..., np.newaxis]
     if(filter.ndim==2):
         filter=filter[..., np.newaxis]
-    h, w, c=img.shape
+    c=img.shape[2]
     a, b, c1 =filter.shape
     assert c1==c
     assert a%2==1 and b %2==1
@@ -77,7 +77,7 @@ def bilinear_interpolation(raw_img, dtype="uint8"):
     h, w=raw_img.shape
     colored_img=get_colored_img(raw_img, dtype)
     sum=apply_filter(colored_img, np.ones((3, 3, 3)))
-    red_mask, green_mask, blue_mask=np.dsplit(get_bayer_masks(h, w), 3)
+    _, green_mask, _=np.dsplit(get_bayer_masks(h, w), 3)
     green_mask=green_mask.squeeze()
     sum[green_mask]//=2
     sum[~green_mask]//=4

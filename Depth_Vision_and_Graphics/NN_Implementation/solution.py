@@ -569,12 +569,12 @@ class Dropout(Layer):
         """
         :param grad_outputs: np.array((n, ...)), dLoss/dOutputs
 
-        :return: np.array((n, ...)), dLoss/dInputs
+        :return: np.array((n, ...)), dLoss/dInB, C = input.shapeputs
 
             n - batch size
             ... - arbitrary shape (the same for input and output)
         """
-        return grad_outputs*self.forward_mask
+        return grad_outputs*    self.forward_mask
 
 
 # ====================== 2.3 Train and Test on CIFAR-10 ======================

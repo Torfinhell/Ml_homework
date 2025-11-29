@@ -20,24 +20,22 @@ def pca_compression(matrix, p):
     # Your code here
 
     # Отцентруем каждую строчку матрицы
-    ...
+    matrix_mean = np.mean(matrix, axis=1)
+    centered = matrix - matrix_mean[:, None]
     # Найдем матрицу ковариации
-    ...
+    cov = centered @ centered.T / matrix.shape[1]
     # Ищем собственные значения и собственные векторы матрицы ковариации, используйте linalg.eigh из numpy
-    ...
+    eigvals, eigvecs = np.linalg.eigh(cov)
     # Посчитаем количество найденных собственных векторов
-    ...
     # Сортируем собственные значения в порядке убывания
-    ...
+    ids = np.argsort(eigvals)[::-1]
     # Сортируем собственные векторы согласно отсортированным собственным значениям
-    # !Это все для того, чтобы мы производили проекцию в направлении максимальной дисперсии!
-    ...
+    sorte_eigvecs = eigvecs[:, ids]
     # Оставляем только p собственных векторов
-    ...
+    U = sorte_eigvecs[:, :p]
     # Проекция данных на новое пространство
-    ...
-
-    return ...
+    proj = U.T @ centered
+    return U, proj, matrix_mean
 
 
 def pca_decompression(compressed):
@@ -48,13 +46,10 @@ def pca_decompression(compressed):
 
     result_img = []
     for i, comp in enumerate(compressed):
-        # Матрично умножаем собственные векторы на проекции и прибавляем среднее значение по строкам исходной матрицы
-        # !Это следует из описанного в самом начале примера!
-
         # Your code here
-        ...
-
-    return ...
+        U, projection, means = comp
+        result_img.append(U @ projection+ means[:, None])
+    return np.stack(result_img, axis=2).astype(np.int64).clip(0,255)
 
 
 def pca_visualize():
@@ -67,13 +62,9 @@ def pca_visualize():
     fig.set_figheight(12)
 
     for i, p in enumerate([1, 5, 10, 20, 50, 100, 150, 200, 256]):
-        compressed = []
-        for j in range(0, 3):
-            # Your code here
-            ...
-
-        axes[i // 3, i % 3].imshow(...)
-        axes[i // 3, i % 3].set_title("Компонент: {}".format(p))
+        compressed = [pca_compression(img[..., j], p) for j in range(3)]
+        axes[i // 3, i % 3].imshow(pca_decompression(compressed))
+        axes[i // 3, i % 3].set_title(f"Кол-во компонент: {p}")
 
     fig.savefig("pca_visualization.png")
 
@@ -85,8 +76,13 @@ def rgb2ycbcr(img):
     """
 
     # Your code here
-
-    return ...
+    rgb2ycbcr = np.array([
+        [0.299, 0.587, 0.114], 
+        [-0.1687, -0.3313, 0.5], 
+        [0.5, -0.4187, -0.0813]])
+    bias = np.array([0.0, 128.0, 128.0])
+    ycbcr = img.reshape(-1, 3) @ rgb2ycbcr.T + bias
+    return ycbcr.reshape(img.shape)
 
 
 def ycbcr2rgb(img):
@@ -96,8 +92,14 @@ def ycbcr2rgb(img):
     """
 
     # Your code here
-
-    return ...
+    ycbcr2rgb = np.array([
+        [1.0, 0.0, 1.402], 
+        [1.0, -0.34414, -0.71414], 
+        [1.0, 1.77, 0.0]
+        ])
+    bias = np.array([0.0, 128.0, 128.0])
+    rgb = np.matmul(img.reshape(-1, 3) - bias, ycbcr2rgb.T)
+    return rgb.reshape(img.shape)
 
 
 def get_gauss_1():
@@ -107,7 +109,13 @@ def get_gauss_1():
         rgb_img = rgb_img[..., :3]
 
     # Your code here
-
+    ycbcr = rgb2ycbcr(rgb_img)
+    y, cb, cr = np.dsplit(ycbcr, 3)
+    cb = gaussian_filter(cb.squeeze(), 10)
+    cr = gaussian_filter(cr.squeeze(), 10)
+    rgb = ycbcr2rgb( np.concatenate([y, cb[..., None], cr[..., None]], axis=2))
+    rgb = np.clip(np.round(rgb), 0, 255).astype(np.int64)
+    plt.imshow(rgb)
     plt.savefig("gauss_1.png")
 
 
@@ -118,8 +126,13 @@ def get_gauss_2():
         rgb_img = rgb_img[..., :3]
 
     # Your code here
-
-    plt.savefig("gauss_2.png")
+    ycbcr = rgb2ycbcr(rgb_img)
+    y, cb, cr = np.dsplit(ycbcr, 3)
+    y = gaussian_filter(y.squeeze(), 10)
+    rgb = ycbcr2rgb( np.concatenate([y[..., None], cb, cr], axis=2))
+    rgb = np.clip(np.round(rgb), 0, 255).astype(np.int64)
+    plt.imshow(rgb)
+    plt.savefig("gauss_1.png")
 
 
 def downsampling(component):
@@ -129,8 +142,8 @@ def downsampling(component):
     """
 
     # Your code here
-
-    return ...
+    blurred = gaussian_filter(component, 10)
+    return blurred[::2, ::2]
 
 
 def dct(block):
@@ -140,8 +153,19 @@ def dct(block):
     """
 
     # Your code here
-
-    return ...
+    N = 8
+    result = np.zeros((N, N), dtype=np.float64)
+    block = block.astype(np.float64)
+    for u in range(N):
+        for v in range(N):
+            alpha_u = 1/np.sqrt(2) if u == 0 else 1.0
+            alpha_v = 1/np.sqrt(2) if v == 0 else 1.0
+            s = 0.0
+            for x in range(N):
+                for y in range(N):
+                    s += block[x, y] * np.cos((2*x+1)*u*np.pi/16) * np.cos((2*y+1)*v*np.pi/16)
+            result[u, v] = 0.25 * alpha_u * alpha_v * s
+    return result
 
 
 # Матрица квантования яркости
@@ -180,8 +204,7 @@ def quantization(block, quantization_matrix):
     """
 
     # Your code here
-
-    return ...
+    return np.round(block / np.clip(quantization_matrix, 1, np.inf))
 
 
 def own_quantization_matrix(default_quantization_matrix, q):
@@ -192,10 +215,13 @@ def own_quantization_matrix(default_quantization_matrix, q):
     """
 
     assert 1 <= q <= 100
-
-    # Your code here
-
-    return ...
+    if q < 50:
+        scale = 5000.0 / q
+    else:
+        scale = 200.0 - 2.0 * q
+    
+    matrix = np.floor((default_quantization_matrix * scale + 50.0) / 100.0)
+    return np.clip(matrix, 0,np.inf)
 
 
 def zigzag(block):
@@ -205,8 +231,29 @@ def zigzag(block):
     """
 
     # Your code here
-
-    return ...
+    arr=[]
+    i=0
+    j=0
+    size = block.shape[0]
+    for _ in range(size*size):
+        arr.append(block[i][j])
+        if (i + j) % 2 == 0:
+            if j < size - 1 and i > 0:
+                i -= 1
+                j += 1
+            elif j < size - 1:
+                j += 1
+            else:
+                i += 1
+        else:
+            if i < size - 1 and j > 0:
+                i += 1
+                j -= 1
+            elif i < size - 1:
+                i += 1
+            else:
+                j += 1
+    return np.array(arr)
 
 
 def compression(zigzag_list):
@@ -214,12 +261,30 @@ def compression(zigzag_list):
     Вход: список после зигзаг-сканирования
     Выход: сжатый список в формате, который был приведен в качестве примера в самом начале данного пункта
     """
-
-    # Your code here
-
-    return ...
-
-
+    cnt_zero=0
+    ans=[]
+    for elem in zigzag_list:
+        if(elem==0):
+            cnt_zero+=1
+        if(elem!=0):
+            if(cnt_zero):
+                ans.extend([0,cnt_zero])
+                cnt_zero=0
+            ans.append(elem)
+    if(cnt_zero):
+        ans.extend([0,cnt_zero])
+    return ans
+def apply_compression_to_8_by_8(image,quantizer):
+    matrix_blocks=[]
+    for i in range(0,image.shape[0],8):
+        for j in range(0,image.shape[1],8):
+            block=image[i:i+8,j:j+8]-128
+            block=dct(block)
+            block=quantization(block,quantizer)
+            block=zigzag(block)
+            block=compression(block)
+            matrix_blocks.append(block)
+    return matrix_blocks
 def jpeg_compression(img, quantization_matrixes):
     """JPEG-сжатие
     Вход: цветная картинка, список из 2-ух матриц квантования
@@ -229,15 +294,22 @@ def jpeg_compression(img, quantization_matrixes):
     # Your code here
 
     # Переходим из RGB в YCbCr
-    ...
-    # Уменьшаем цветовые компоненты
-    ...
-    # Делим все компоненты на блоки 8x8 и все элементы блоков переводим из [0, 255] в [-128, 127]
-    ...
-    # Применяем ДКП, квантование, зизгаз-сканирование и сжатие
-    ...
+    ycbcr=rgb2ycbcr(img)
+    y,cb,cr=np.dsplit(ycbcr,3)
+    y=y.squeeze()
+    cb=cb.squeeze()
+    cr=cr.squeeze()
 
-    return ...
+    # Уменьшаем цветовые компоненты
+    cb=downsampling(cb)
+    cr=downsampling(cr)
+
+    # Делим все компоненты на блоки 8x8 и все элементы блоков переводим из [0, 255] в [-128, 127]
+    # Применяем ДКП, квантование, зизгаз-сканирование и сжатие
+    y_blocks=apply_compression_to_8_by_8(y.squeeze(), quantization_matrixes[0])
+    cb_blocks=apply_compression_to_8_by_8(cb.squeeze(), quantization_matrixes[1])
+    cr_blocks=apply_compression_to_8_by_8(cr.squeeze(), quantization_matrixes[1])
+    return [y_blocks,cb_blocks,cr_blocks]
 
 
 def inverse_compression(compressed_list):
@@ -247,8 +319,16 @@ def inverse_compression(compressed_list):
     """
 
     # Your code here
-
-    return ...
+    ans=[]
+    i=0
+    while i<len(compressed_list):
+        if(compressed_list[i]==0):
+            ans.extend([0]*compressed_list[i+1])
+            i+=2
+        else:
+            ans.append(compressed_list[i])
+            i+=1
+    return np.array(ans)
 
 
 def inverse_zigzag(input):
@@ -258,8 +338,29 @@ def inverse_zigzag(input):
     """
 
     # Your code here
-
-    return ...
+    block=np.zeros((8,8))
+    i=0
+    j=0
+    size=8
+    for elem in input:
+        block[i][j]=elem
+        if (i + j) % 2 == 0:
+            if j < size - 1 and i > 0:
+                i -= 1
+                j += 1
+            elif j < size - 1:
+                j += 1
+            else:
+                i += 1
+        else:
+            if i < size - 1 and j > 0:
+                i += 1
+                j -= 1
+            elif i < size - 1:
+                i += 1
+            else:
+                j += 1
+    return block
 
 
 def inverse_quantization(block, quantization_matrix):
@@ -269,8 +370,7 @@ def inverse_quantization(block, quantization_matrix):
     """
 
     # Your code here
-
-    return ...
+    return block * np.clip(quantization_matrix,1,  np.inf)
 
 
 def inverse_dct(block):
@@ -280,8 +380,18 @@ def inverse_dct(block):
     """
 
     # Your code here
-
-    return ...
+    N=8
+    result=np.zeros((N,N))
+    for x in range(N):
+        for y in range(N):
+            s=0.0
+            for u in range(N):
+                for v in range(N):
+                    alpha_u=1/np.sqrt(2) if u==0 else 1.0
+                    alpha_v=1/np.sqrt(2) if v==0 else 1.0
+                    s+=alpha_u*alpha_v*block[u,v]*np.cos((2*x+1)*u*np.pi/16)*np.cos((2*y+1)*v*np.pi/16)
+            result[x,y]=np.round(0.25*s)
+    return result
 
 
 def upsampling(component):
@@ -291,10 +401,29 @@ def upsampling(component):
     """
 
     # Your code here
+    h,w=component.shape[:2]
+    result=np.zeros((2*h,2*w,1))
+    for i in range(h):
+        for j in range(w):
+            result[2*i:2*i+2,2*j:2*j+2]=component[i,j]
+    return result
 
-    return ...
+def decompress_block(block,quantization_matrix):
+        decompressed=inverse_compression(block)
+        block=inverse_zigzag(decompressed)
+        block=inverse_quantization(block,quantization_matrix)
+        block=inverse_dct(block)
+        return block+128
 
-
+def reconstruct_from_blocks(blocks,h,w,quantization_matrix):
+    result=np.zeros((h,w))
+    block_idx=0
+    for i in range(0,h,8):
+        for j in range(0,w,8):
+            if block_idx<len(blocks):
+                result[i:i+8,j:j+8]=decompress_block(blocks[block_idx],quantization_matrix)
+                block_idx+=1
+    return result
 def jpeg_decompression(result, result_shape, quantization_matrixes):
     """Разжатие изображения
     Вход: result список сжатых данных, размер ответа, список из 2-ух матриц квантования
@@ -303,7 +432,16 @@ def jpeg_decompression(result, result_shape, quantization_matrixes):
 
     # Your code here
 
-    return ...
+    y_blocks,cb_blocks,cr_blocks=result
+    h,w=result_shape[:2]
+    y=reconstruct_from_blocks(y_blocks,h,w,quantization_matrixes[0])
+    cb=reconstruct_from_blocks(cb_blocks,h//2,w//2,quantization_matrixes[1])
+    cr=reconstruct_from_blocks(cr_blocks,h//2,w//2,quantization_matrixes[1])
+    cb = upsampling(cb[...,None])
+    cr = upsampling(cr[...,None])
+    ycbcr = np.dstack([y, cb.squeeze(), cr.squeeze()])
+    rgb=ycbcr2rgb(ycbcr)
+    return np.clip(rgb,0,255).astype(np.int64)
 
 
 def jpeg_visualize():
@@ -316,9 +454,14 @@ def jpeg_visualize():
     fig.set_figheight(12)
 
     for i, p in enumerate([1, 10, 20, 50, 80, 100]):
-        # Your code here
+        y_quantization=own_quantization_matrix(y_quantization_matrix,p)
+        color_quantization=own_quantization_matrix(color_quantization_matrix,p)
+        matrixes=[y_quantization,color_quantization]
 
-        axes[i // 3, i % 3].imshow(...)
+        compressed=jpeg_compression(img,matrixes)
+        decompressed=jpeg_decompression(compressed,img.shape,matrixes)
+        
+        axes[i // 3, i % 3].imshow(decompressed)
         axes[i // 3, i % 3].set_title("Quality Factor: {}".format(p))
 
     fig.savefig("jpeg_visualization.png")
@@ -421,9 +564,9 @@ def get_jpeg_metrics_graph():
 
 
 if __name__ == "__main__":
-    pca_visualize()
-    get_gauss_1()
-    get_gauss_2()
-    jpeg_visualize()
+    # pca_visualize()
+    # get_gauss_1()
+    # get_gauss_2()
+    # jpeg_visualize()
     get_pca_metrics_graph()
     get_jpeg_metrics_graph()

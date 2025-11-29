@@ -28,22 +28,21 @@ def compute_quantization_params(
     q_min: np.int32,
     q_max: np.int32,
 ) -> QuantizationParameters:
-    # your code goes here \/
-    return ...
-    # your code goes here /\
+    return QuantizationParameters(
+        (r_max-r_min)/(q_max-q_min), 
+        np.int32(round((r_max*q_min-r_min*q_max)/(r_max-r_min))),
+        q_min,
+        q_max
+    )
 
 
 # Task 2 (0.5 + 0.5 = 1 point)
 def quantize(r: np.ndarray, qp: QuantizationParameters) -> np.ndarray:
-    # your code goes here \/
-    return ...
-    # your code goes here /\
+    return np.clip((np.round(r/qp.scale+qp.zero_point)), qp.q_min, qp.q_max).astype(np.int8)
 
 
 def dequantize(q: np.ndarray, qp: QuantizationParameters) -> np.ndarray:
-    # your code goes here \/
-    return ...
-    # your code goes here /\
+   return qp.scale*(q-qp.zero_point)
 
 
 # Task 3 (1 point)
@@ -53,9 +52,9 @@ class MinMaxObserver:
         self.max = np.finfo(np.float64).min
 
     def __call__(self, x: torch.Tensor):
-        # your code goes here \/
-        self.min = ...
-        self.max = ...
+        x_np = x.detach().cpu().numpy().astype(np.float64)
+        self.min = min(self.min, x_np.min())
+        self.max = max(self.max, x_np.max())
         # your code goes here /\
 
 

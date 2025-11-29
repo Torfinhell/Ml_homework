@@ -7,7 +7,7 @@ import random
 import shutil
 import typing
 from concurrent.futures import ProcessPoolExecutor
-
+from torch import nn
 import albumentations as A
 import lightning as L
 import numpy as np
@@ -19,15 +19,26 @@ import skimage.transform
 import torch
 import torchvision
 import tqdm
+from torch.utils.data import DataLoader
 from albumentations.pytorch import ToTensorV2
 from PIL import Image
 from sklearn.neighbors import KNeighborsClassifier
-
+from collections import defaultdict
+import pandas as pd
+from pathlib import Path
 # !Этих импортов достаточно для решения данного задания
 
 
 CLASSES_CNT = 205
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+LEARNING_RATE=4e-3
+BATCH_SIZE=8
+NUM_WORKERS=8
+LABEL_SMOOTHING=0.1
+WIDTH=30
+HEIGHT=30
+GAMMA=0.8
+MAX_EPOCHS=30
 
 
 class DatasetRTSD(torch.utils.data.Dataset):
@@ -46,17 +57,36 @@ class DatasetRTSD(torch.utils.data.Dataset):
         super().__init__()
         self.classes, self.class_to_idx = self.get_classes(path_to_classes_json)
         ### YOUR CODE HERE - список пар (путь до картинки, индекс класса)
-        self.samples = ...
+        dirs_classes=[(os.path.join(root_path, dir_class), self.class_to_idx[dir_class]) for root_path in root_folders for dir_class in os.listdir(root_path)]
+        self.samples = [(os.path.join(path_dir, file), class_ind) for path_dir, class_ind in dirs_classes for file in os.listdir(path_dir)]
         ### YOUR CODE HERE - cловарь из списков картинок для каждого класса, classes_to_samples[индекс класса] = [список чисел-позиций картинок в self.samples]
-        self.classes_to_samples = ...
+        self.classes_to_samples =  {i:[] for i in range(len(self.classes))}
+        for i, (_, ind) in enumerate(self.samples):
+            self.classes_to_samples[ind].append(i)
+        # mean, std=self.calculate_mean_std() #calculate mean std for the dataset
+        mean, std=np.array([106.13662484,  88.12364826,  84.8854233]), np.array([35.645314, 35.73020842, 38.32509976])
         ### YOUR CODE HERE - аугментации + нормализация + ToTensorV2
-        self.transform = ...
-
+        self.transform = A.Compose([
+            A.Resize(width=WIDTH, height=HEIGHT),
+            A.Normalize(mean=mean, std=std),
+            A.ToTensorV2()
+        ])
+    def calculate_mean_std(self):
+        std=[]
+        mean=[]
+        for image, _, _ in self:
+            mean.append(image.mean(axis=(0, 1)))
+            std.append(image.std(axis=(0, 1)))
+        return np.array(mean).mean(axis=0), np.array(std).mean(axis=0)
     def __getitem__(self, index: int) -> typing.Tuple[torch.Tensor, str, int]:
         """
         Возвращает тройку: тензор с картинкой, путь до файла, номер класса файла (если нет разметки, то "-1").
         """
-        ### YOUR CODE HERE
+        img_path, class_ind=self.samples[index]
+        image=np.array(Image.open(img_path).convert("RGB"))
+        if getattr(self, "transform", None) is not None:
+            image=self.transform(image=image)["image"]
+        return image, img_path, class_ind
 
     @staticmethod
     def get_classes(
@@ -67,17 +97,19 @@ class DatasetRTSD(torch.utils.data.Dataset):
 
         :param path_to_classes_json: путь до classes.json
         """
+        with open(path_to_classes_json, "r") as file:
+            classes_json=json.load(file)
+        class_to_idx={class_:classes_json[class_]["id"] for class_ in classes_json}
         ### YOUR CODE HERE - словарь, class_to_idx['название класса'] = индекс
-        class_to_idx = ...
         ### YOUR CODE HERE - массив, classes[индекс] = 'название класса'
-        classes = ...
+        classes = [class_ for class_, _ in sorted(class_to_idx.items(),key=lambda x:x[1])]
         return classes, class_to_idx
 
     def __len__(self) -> int:
         """
         Возвращает размер датасета (количество сэмплов).
         """
-        ### YOUR CODE HERE
+        return len(self.samples)
 
 
 class TestData(torch.utils.data.Dataset):
@@ -98,27 +130,52 @@ class TestData(torch.utils.data.Dataset):
         super().__init__()
         self.root = root
         ### YOUR CODE HERE - список путей до картинок
-        self.samples = ...
+        self.samples = os.listdir(self.root)
         ### YOUR CODE HERE - преобразования: ресайз + нормализация + ToTensorV2
-        self.transform = ...
+        with open(path_to_classes_json, "r") as file:
+            classes_json=json.load(file)
+        self.class_to_idx={class_:classes_json[class_]["id"] for class_ in classes_json}
+        self.rare_gt={classes_json[class_]["id"] for class_ in classes_json if classes_json[class_]["type"]=="rare"}
+        self.freq_gt={classes_json[class_]["id"] for class_ in classes_json if classes_json[class_]["type"]=="freq"}
+        self.classes = [class_ for class_, _ in sorted(self.class_to_idx.items(),key=lambda x:x[1])]
+        mean, std=np.array([106.13662484,  88.12364826,  84.8854233]), np.array([35.645314, 35.73020842, 38.32509976])
+        self.transform = A.Compose([
+            A.Resize(width=WIDTH, height=HEIGHT),
+            A.Normalize(mean=mean, std=std),
+            A.ToTensorV2()
+        ])
         self.targets = None
         if annotations_file is not None:
             ### YOUR CODE HERE - словарь, targets[путь до картинки] = индекс класса
-            self.targets = ...
+            df=pd.read_csv(annotations_file)
+            self.targets = dict(zip([file for file in df["filename"]], [self.class_to_idx[class_] for class_ in df["class"]]))
+            
 
     def __getitem__(self, index: int) -> typing.Tuple[torch.Tensor, str, int]:
         """
         Возвращает тройку: тензор с картинкой, путь до файла, номер класса файла (если нет разметки, то "-1").
         """
-        ### YOUR CODE HERE
+        img_path=self.samples[index]
+        image=np.array(Image.open(os.path.join(self.root,img_path)).convert("RGB"))
+        if self.transform is not None:
+            image=self.transform(image=image)["image"]
+        if self.targets is not None and img_path in self.targets:
+            return image, img_path, self.targets[img_path]
+        return image, img_path, -1
+
 
     def __len__(self) -> int:
         """
         Возвращает размер датасета (количество сэмплов).
         """
-        ### YOUR CODE HERE
+        return len(self.samples)
 
-
+def get_resnet(internal_features, transfer=True):
+    weights=torchvision.models.ResNet50_Weights.DEFAULT if transfer else None
+    model=torchvision.models.resnet50(weights=weights)
+    in_feutures=model.fc.in_features
+    model.fc=nn.Linear(in_feutures, internal_features)
+    return  model
 class CustomNetwork(L.LightningModule):
     """
     Класс, реализующий нейросеть для классификации.
@@ -136,13 +193,21 @@ class CustomNetwork(L.LightningModule):
     ):
         super().__init__()
         ### YOUR CODE HERE
+        self.lr=LEARNING_RATE
+        self.model=get_resnet(internal_features)
+        self.linear=nn.Linear(internal_features, CLASSES_CNT)
+        self.loss_fn=nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
+    def accuracy(self, pred, ans):
+        assert pred.shape==ans.shape
+        return ((pred==ans).sum()/pred.size()[0]).item()
 
     def forward(self, x: torch.Tensor) -> typing.Tuple[torch.Tensor, torch.Tensor]:
         """
         Функция для прогона данных через нейронную сеть.
         Возвращает два тензора: внутреннее представление и логиты после слоя-классификатора.
         """
-        ### YOUR CODE HERE
+        y=self.model(x)
+        return y, self.linear(y)
 
     def predict(self, x: torch.Tensor) -> np.ndarray:
         """
@@ -150,15 +215,62 @@ class CustomNetwork(L.LightningModule):
 
         :param x: батч с картинками
         """
-        return  ### YOUR CODE HERE
-
-
+        with torch.no_grad():
+            return  np.argmax(self.linear(self.model(x)).cpu().numpy(), axis=-1)
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=GAMMA)
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+    def training_step(self, batch):
+        return self._step(batch, "train")
+    def validation_step(self, batch):
+        return self._step(batch, "valid")
+    def _step(self, batch, kind):
+        x, y, _=batch
+        p=self.model(x)
+        loss=self.loss_fn(p, y)
+        accs=self.accuracy(p.argmax(axis=-1), y)
+        return self._log_metrics(loss, accs, kind)
+    def _log_metrics(self, loss, accs, kind):
+        metrics={}
+        if loss is not None:
+            metrics[f"{kind}_loss"]=loss
+        if accs is not None:
+            metrics[f"{kind}_accs"]=accs
+        self.log_dict(
+            metrics,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True
+        )
+        return loss
+def collate(arr:typing.List[typing.Any]):
+    return torch.stack([image for image, _, _ in arr]), torch.tensor([class_id for _, _, class_id in arr]),[img_path for _, img_path,_ in arr]
 def train_simple_classifier() -> torch.nn.Module:
     """
     Функция для обучения простого классификатора на исходных данных.
     """
     ### YOUR CODE HERE
+    ds_train=DatasetRTSD(root_folders=["cropped-train"], path_to_classes_json="classes.json")
+    ds_valid=TestData(root="smalltest", path_to_classes_json="classes.json", annotations_file="smalltest_annotations.csv")
+    dl_valid=DataLoader(ds_valid, collate_fn=collate, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS)
+    dl_train=DataLoader(ds_train, collate_fn=collate, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=True)
+    max_epochs=MAX_EPOCHS
+    model=CustomNetwork()
+    callbacks = [
+        L.pytorch.callbacks.TQDMProgressBar(leave=True),
+    ]
+    trainer = L.Trainer(
+        callbacks=callbacks,
+        max_epochs=max_epochs,
+        enable_checkpointing=False,
+        logger=True,
+        gradient_clip_val=1.0,
+    )
+    trainer.fit(model, dl_train, dl_valid)
+    torch.save(model.state_dict(), "simple_model.pth")
     return model
+
 
 
 def apply_classifier(
@@ -174,7 +286,13 @@ def apply_classifier(
     :param path_to_classes_json: путь до файла с информацией о классах classes.json
     """
     ### YOUR CODE HERE - список словарей вида {'filename': 'имя файла', 'class': 'строка-название класса'}
-    results = ...
+    # state_dict = torch.load(model_path, map_location=config.DEVICE)
+    # model.load_state_dict(state_dict)
+    ds_test=TestData(test_folder, path_to_classes_json)
+    dl_test=DataLoader(ds_test, collate_fn=collate, batch_size=1)
+    results = []
+    for img, _,img_path in dl_test:
+        results.append({'filename':img_path[0], 'class':ds_test.classes[model.predict(img).argmax(axis=-1).item()]})
     return results
 
 
@@ -192,6 +310,18 @@ def test_classifier(
     :param annotations_file: путь до .csv-файла с аннотациями (опциональный)
     """
     ### YOUR CODE HERE
+    total_acc, rare_recall, freq_recall=0,0,0,0
+    ds_test=TestData(test_folder, "classes.json", annotations_file)
+    rare_gt=ds_test.rare_gt
+    freq_gt=ds_test.freq_gt
+    for image, _, target in ds_test:
+        pred=model.predict(image).argmax(axis=-1).item()
+        total_acc+=(pred==target)
+        rare_recall+=(pred in rare_gt)
+        freq_recall+=(pred in freq_gt)
+    total_acc/=(len(rare_gt)+len(freq_gt))
+    rare_recall/=len(rare_gt)
+    freq_recall/=len(freq_gt)
     return total_acc, rare_recall, freq_recall
 
 
@@ -436,4 +566,5 @@ if __name__ == "__main__":
 
     # Feel free to put here any code that you used while
     # debugging, training and testing your solution.
-    pass
+    train_simple_classifier()
+
