@@ -12,3 +12,17 @@ Depth_Vision_and_Graphics/**/.vscode/**
 Depth_Vision_and_Graphics/**/examples/**
 Depth_Vision_and_Graphics/**/*.pt
 Depth_Vision_and_Graphics/**/runs/**
+Bird_classification/
+Deconvolution/
+Demosaicing/
+Face_Points/
+Image\ Compression/
+NN_Implementation/
+NN_Quantization/
+Rare_Traffic_Signs/
+Vehicle_Detector/
+COCO_LVIS/
+COCO_LVIS.zip
+cocolvis_annotation.tar.gz
+train2017.zip
+val2017.zip
