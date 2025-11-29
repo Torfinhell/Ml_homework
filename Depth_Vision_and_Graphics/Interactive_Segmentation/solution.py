@@ -528,10 +528,10 @@ class UniformRandomResize(DualTransform):
         self.scale_range = scale_range
         self.interpolation = interpolation
 
-    def get_params_dependent_on_targets(self, params):
+    def get_params_dependent_on_data(self, params, data):
         scale = random.uniform(*self.scale_range)
-        height = int(round(params["image"].shape[0] * scale))
-        width = int(round(params["image"].shape[1] * scale))
+        height = int(round(params["shape"][0] * scale))
+        width = int(round(params["shape"][1] * scale))
         return {"new_height": height, "new_width": width}
 
     def apply(
@@ -601,7 +601,7 @@ def train_segmentation():
                 min_height=h,
                 min_width=w,
                 border_mode=cv2.BORDER_CONSTANT,
-                value=0,
+                fill=0,
             ),
             RandomCrop(*input_size),
         ],
@@ -614,7 +614,7 @@ def train_segmentation():
                 min_height=h,
                 min_width=w,
                 border_mode=cv2.BORDER_CONSTANT,
-                value=0,
+                fill=0,
             ),
             RandomCrop(*input_size),
         ],
