@@ -11,6 +11,7 @@ from torchvision import transforms
 
 from .points_sampler import MultiPointSampler
 from .sample import DSample
+import os
 
 
 class ISDataset(torch.utils.data.dataset.Dataset):
@@ -114,6 +115,7 @@ class CocoLvisDataset(ISDataset):
         self._images_path = self._split_path / "images"
         self._masks_path = self._split_path / "masks"
         self.stuff_prob = stuff_prob
+        print(os.getcwd())
         print(self._split_path / anno_file, "rb")
         with open(self._split_path / anno_file, "rb") as f:
             self.dataset_samples = sorted(pickle.load(f).items())
