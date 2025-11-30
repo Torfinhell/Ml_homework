@@ -76,9 +76,9 @@ class ISModel(nn.Module):
         # Will be used in testing
         self.pred_thr = 0.5
 
-    def forward(self, image, points):
-        image, prev_mask = self.prepare_input(image)
-        coord_features = self.get_coord_features(image, prev_mask, points)
+    def forward(self, image, points): #image (B, 4, H, W) #points (B, 48, 3)
+        image, prev_mask = self.prepare_input(image) #image (B, 3, H, W) prev_mask (B, 1, H, W)
+        coord_features = self.get_coord_features(image, prev_mask, points)# (B, 3, H, W) coord_features
         outputs = self.backbone_forward(image, coord_features)
         return outputs
 
@@ -388,7 +388,7 @@ class ISTrainer:
                     prefix="train",
                 )
 
-            tbar.set_description(f"Epoch {epoch}, training loss {train_loss/(i+1):.4f}")
+            tbar.set_description(f"Epoch {epoch}, training loss {train_loss/(i+1):.7f}")
         self.scheduler.step()
         save_checkpoint(self.net, self.cfg.CHECKPOINTS_PATH, epoch=None)
 
