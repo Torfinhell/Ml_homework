@@ -670,10 +670,11 @@ def train_segmentation():
         max_interactive_clicks=3,
     )
 
-    trainer.run(num_epochs=10)
+    trainer.run(num_epochs=NUM_EPOCHS)
 
 
 if __name__ == "__main__":
     LEARNING_RATE=3e-4
     BATCH_SIZE=8
+    NUM_EPOCHS=5
     train_segmentation()
