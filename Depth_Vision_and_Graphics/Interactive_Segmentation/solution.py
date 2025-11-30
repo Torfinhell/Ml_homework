@@ -14,11 +14,10 @@ from torchvision import transforms
 from torchvision.models.mobilenetv3 import MobileNet_V3_Large_Weights
 from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large
 from tqdm import tqdm
-
+import torch.nn.functional as F
 from utils.datasets import CocoLvisDataset
 from utils.misc import draw_points, draw_probmap, save_checkpoint
 from utils.points_sampler import MultiPointSampler
-
 
 class ISModel(nn.Module):
     # Your model should not have required parameters for init
@@ -351,7 +350,7 @@ class ISTrainer:
 
         self.device = cfg.device
         self.net = model.to(self.device)
-        self.optim = torch.optim.AdamW(self.net.parameters(), lr=3e-4)
+        self.optim = torch.optim.AdamW(self.net.parameters(), lr=LEARNING_RATE)
 
     def run(self, num_epochs, validation=True):
         print(f"Total Epochs: {num_epochs}")
@@ -569,7 +568,20 @@ class UniformRandomResize(DualTransform):
     def targets_as_params(self):
         return ["image"]
 
-
+class BinaryFocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+    def forward(self, logits, targets):
+        """
+        logits: (N,)
+        targets: (N,) in {0,1}
+        """
+        bce_loss = F.binary_cross_entropy_with_logits(logits, targets.float(), reduction='none')
+        pt = torch.exp(-bce_loss)
+        loss = self.alpha * (1 - pt)**self.gamma * bce_loss
+        return loss.mean()
 def train_segmentation():
     input_size = (400, 400)
     model = ISModel(pretrained=True)
@@ -587,11 +599,10 @@ def train_segmentation():
     cfg.device = torch.device("cuda")
 
     cfg.max_initial_points = 24
-    cfg.batch_size = 48
+    cfg.batch_size = BATCH_SIZE
     cfg.val_batch_size = cfg.batch_size
 
-    instance_loss = torch.nn.BCEWithLogitsLoss()
-
+    instance_loss =BinaryFocalLoss()
     # You can add more augmentations here
     h, w = input_size
     train_augmentator = Compose(
@@ -663,4 +674,6 @@ def train_segmentation():
 
 
 if __name__ == "__main__":
+    LEARNING_RATE=3e-4
+    BATCH_SIZE=8
     train_segmentation()
