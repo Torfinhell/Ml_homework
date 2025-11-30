@@ -686,6 +686,6 @@ if __name__ == "__main__":
     LEARNING_RATE=5e-4
     BATCH_SIZE=64
     NUM_EPOCHS=100
-    EPOCH_LEN_TRAIN=3000
+    EPOCH_LEN_TRAIN=6000
     EPOCH_LEN_VAL=200
     train_segmentation()
