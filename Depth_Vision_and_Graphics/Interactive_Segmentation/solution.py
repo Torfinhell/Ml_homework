@@ -351,6 +351,8 @@ class ISTrainer:
         self.device = cfg.device
         self.net = model.to(self.device)
         self.optim = torch.optim.AdamW(self.net.parameters(), lr=LEARNING_RATE)
+        self.scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(self.optim, NUM_EPOCHS, eta_min=1e-6)
+
 
     def run(self, num_epochs, validation=True):
         print(f"Total Epochs: {num_epochs}")
@@ -387,7 +389,7 @@ class ISTrainer:
                 )
 
             tbar.set_description(f"Epoch {epoch}, training loss {train_loss/(i+1):.4f}")
-
+        self.scheduler.step()
         save_checkpoint(self.net, self.cfg.CHECKPOINTS_PATH, epoch=None)
 
         if epoch % self.checkpoint_interval == 0:
@@ -574,10 +576,6 @@ class BinaryFocalLoss(nn.Module):
         self.alpha = alpha
         self.gamma = gamma
     def forward(self, logits, targets):
-        """
-        logits: (N,)
-        targets: (N,) in {0,1}
-        """
         bce_loss = F.binary_cross_entropy_with_logits(logits, targets.float(), reduction='none')
         pt = torch.exp(-bce_loss)
         loss = self.alpha * (1 - pt)**self.gamma * bce_loss
@@ -615,6 +613,9 @@ def train_segmentation():
                 fill=0,
             ),
             RandomCrop(*input_size),
+            A.Rotate(limit=30, p=0.3),
+            A.RandomBrightnessContrast(p=0.3),
+            A.GaussNoise(std_range=(0.1, 0.2), p=0.2)
         ],
         p=1.0,
     )
@@ -645,7 +646,7 @@ def train_segmentation():
         augmentator=train_augmentator,
         min_object_area=1000,
         points_sampler=points_sampler,
-        epoch_len=30000,
+        epoch_len=EPOCH_LEN_TRAIN,
         stuff_prob=0.30,
     )
 
@@ -655,7 +656,7 @@ def train_segmentation():
         augmentator=val_augmentator,
         min_object_area=1000,
         points_sampler=points_sampler,
-        epoch_len=2000,
+        epoch_len=EPOCH_LEN_VAL,
     )
 
     trainer = ISTrainer(
@@ -674,7 +675,9 @@ def train_segmentation():
 
 
 if __name__ == "__main__":
-    LEARNING_RATE=3e-4
+    LEARNING_RATE=5e-4
     BATCH_SIZE=64
-    NUM_EPOCHS=5
+    NUM_EPOCHS=100
+    EPOCH_LEN_TRAIN=3000
+    EPOCH_LEN_VAL=200
     train_segmentation()
