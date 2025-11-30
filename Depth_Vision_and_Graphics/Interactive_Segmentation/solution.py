@@ -103,6 +103,138 @@ class ISModel(nn.Module):
         self.load_state_dict(checkpoint["state_dict"])
         return self
 
+# class ISModel(nn.Module):
+#     # Your model should not have required parameters for init
+#     def __init__(
+#         self,
+#         pretrained=False,
+#     ):
+#         super().__init__()
+
+#         self.normalization = BatchImageNormalize(
+#             [0.485, 0.456, 0.406],
+#             [0.229, 0.224, 0.225],
+#         )
+
+#         # Positive, Negative and Previous Mask
+#         self.coord_feature_ch = 3
+#         self.dist_maps = DistMaps(
+#             norm_radius=5,
+#             spatial_scale=1.0,
+#             use_disks=True,
+#         )
+
+#         weights = MobileNet_V3_Large_Weights.IMAGENET1K_V1 if pretrained else None
+#         self.feature_extractor = deeplabv3_mobilenet_v3_large(
+#             num_classes=1,
+#             weights_backbone=weights,
+#         )
+
+#         # Add user clicks and mask on input
+#         old_conv = self.feature_extractor.backbone["0"][0]
+
+#         new_conv = nn.Sequential(
+#             nn.Conv2d(
+#                 old_conv.in_channels + self.coord_feature_ch,
+#                 old_conv.out_channels,
+#                 kernel_size=1,
+#                 bias=False,
+#             ),
+#             nn.BatchNorm2d(old_conv.out_channels),
+#             nn.LeakyReLU(negative_slope=0.2),
+#             nn.Conv2d(
+#                 old_conv.out_channels,
+#                 old_conv.out_channels,
+#                 kernel_size=(3, 3),
+#                 stride=(2, 2),
+#                 padding=(1, 1),
+#                 bias=False,
+#             ),
+#         )
+
+#         self.feature_extractor.backbone["0"][0] = new_conv
+
+#         # Remove Dropout layer
+#         self.feature_extractor.classifier[0].project[3] = nn.Identity()
+
+#         # Will be used in testing
+#         self.pred_thr = 0.5
+
+#     def forward(self, image, points): #image (B, 4, H, W) #points (B, 48, 3)
+#         image, prev_mask = self.prepare_input(image) #image (B, 3, H, W) prev_mask (B, 1, H, W)
+#         coord_features = self.get_coord_features(image, prev_mask, points)# (B, 3, H, W) coord_features
+#         outputs = self.backbone_forward(image, coord_features)
+#         return outputs
+
+#     def prepare_input(self, image):
+#         prev_mask = image[:, 3:, :, :]
+#         image = image[:, :3, :, :]
+#         image = self.normalization(image)
+#         return image, prev_mask
+
+#     def backbone_forward(self, image, coord_features):
+#         net_input = torch.cat((image, coord_features), dim=1)
+#         net_outputs = self.feature_extractor(net_input)["out"]
+#         return {"instances": net_outputs}
+
+#     def get_coord_features(self, image, prev_mask, points):
+#         coord_features = self.dist_maps(image, points)
+#         coord_features = torch.cat((prev_mask, coord_features), dim=1)
+#         return coord_features
+
+#     def restore_from_checkpoint(self, checkpoint_path, device):
+#         checkpoint = torch.load(checkpoint_path, weights_only=True, map_location=device)
+#         self.load_state_dict(checkpoint["state_dict"])
+#         return self
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class Predictor:
     def __init__(self, model, device):
@@ -681,7 +813,7 @@ def train_segmentation():
 if __name__ == "__main__":
     LEARNING_RATE=5e-4
     BATCH_SIZE=64
-    NUM_EPOCHS=100
+    NUM_EPOCHS=30
     EPOCH_LEN_TRAIN=6000
     EPOCH_LEN_VAL=200
     train_segmentation()
