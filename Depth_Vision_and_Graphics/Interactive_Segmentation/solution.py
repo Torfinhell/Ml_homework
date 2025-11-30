@@ -570,16 +570,24 @@ class UniformRandomResize(DualTransform):
     def targets_as_params(self):
         return ["image"]
 
-class BinaryFocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2.0):
+class NormalizedFocalLoss(nn.Module):
+    def __init__(self, alpha=1.0, gamma=2.0, eps=1e-6):
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
+        self.eps = eps
+
     def forward(self, logits, targets):
-        bce_loss = F.binary_cross_entropy_with_logits(logits, targets.float(), reduction='none')
-        pt = torch.exp(-bce_loss)
-        loss = self.alpha * (1 - pt)**self.gamma * bce_loss
-        return loss.mean()
+        bce = F.binary_cross_entropy_with_logits(
+            logits, targets.float(), reduction='none'
+        )
+
+        pt = torch.exp(-bce)
+        focal = self.alpha * (1 - pt)**self.gamma * bce
+        norm = focal.mean().detach() + self.eps
+        focal = focal / norm
+
+        return focal.mean()
 def train_segmentation():
     input_size = (400, 400)
     model = ISModel(pretrained=True)
