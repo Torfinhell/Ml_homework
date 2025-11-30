@@ -570,11 +570,7 @@ class UniformRandomResize(DualTransform):
     def targets_as_params(self):
         return ["image"]
 
-class NormalizedFocalLossPaper(nn.Module):
-    """
-    Normalized Focal Loss exactly as described in Eq (2):
-    NFL(i,j) = -(1 - p_ij)^gamma * log(p_ij) / sum_ij[(1 - p_ij)^gamma]
-    """
+class NFLLoss(nn.Module):
     def __init__(self, gamma=2.0, eps=1e-6):
         super().__init__()
         self.gamma = gamma
@@ -608,7 +604,7 @@ def train_segmentation():
     cfg.batch_size = BATCH_SIZE
     cfg.val_batch_size = cfg.batch_size
 
-    instance_loss =NormalizedFocalLoss()
+    instance_loss =NFLLoss()
     # You can add more augmentations here
     h, w = input_size
     train_augmentator = Compose(
