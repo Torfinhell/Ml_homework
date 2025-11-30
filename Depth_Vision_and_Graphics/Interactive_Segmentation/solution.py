@@ -675,6 +675,6 @@ def train_segmentation():
 
 if __name__ == "__main__":
     LEARNING_RATE=3e-4
-    BATCH_SIZE=8
+    BATCH_SIZE=64
     NUM_EPOCHS=5
     train_segmentation()
