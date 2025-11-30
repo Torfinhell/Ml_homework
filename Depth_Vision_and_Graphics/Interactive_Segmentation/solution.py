@@ -409,7 +409,7 @@ class ISTrainer:
             val_loss += loss.item()
 
             tbar.set_description(
-                f"Epoch {epoch}, validation loss: {val_loss/(i + 1):.4f}",
+                f"Epoch {epoch}, validation loss: {val_loss/(i + 1):.7f}",
             )
 
     def batch_forward(self, batch_data, validation=False):
