@@ -608,7 +608,7 @@ def train_segmentation():
     cfg.batch_size = BATCH_SIZE
     cfg.val_batch_size = cfg.batch_size
 
-    instance_loss =BinaryFocalLoss()
+    instance_loss =NormalizedFocalLoss()
     # You can add more augmentations here
     h, w = input_size
     train_augmentator = Compose(
