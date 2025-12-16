@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import PIL.Image
 import cv2
@@ -14,7 +13,6 @@ import os
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import typing as tp
-from copy import deepcopy
 from functools import partial
 
 #PARAMETRS
