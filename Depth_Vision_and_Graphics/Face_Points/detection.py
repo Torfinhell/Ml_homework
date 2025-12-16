@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import PIL.Image
 import cv2
-from tqdm.auto import tqdm
+from tqdm import tqdm
 import math
 import torchvision.transforms.v2 as T
 from torch.utils import data 
@@ -16,10 +16,11 @@ from albumentations.pytorch import ToTensorV2
 import typing as tp
 from copy import deepcopy
 from functools import partial
+
 #PARAMETRS
 class Config:
     WINDOW_SIZE=(100, 100)
-    LAST_LINEAR_SIZE=10000
+    LAST_LINEAR_SIZE=3800
     BATCH_SIZE=64
     DEVICE=torch.device("cuda") if(torch.cuda.is_available()) else torch.device("cpu")
     LEFT_RIGHT_PAIRS=[(0,3), (1, 2), (4, 9), (5, 8), (6, 7), (10, 10), (12, 12), (11, 13)]
@@ -158,9 +159,8 @@ class MyDataset(data.Dataset):
         else:
             self.points=None
             self.paths=sorted([file for file  in os.listdir(root_images) if file.endswith(".jpg")])
+            self.shapes=self.get_shapes(root_images)
         self.paths=[f"{root_images}/{file}" for file in self.paths]
-
-
         self._transform=transform
     def get_shapes(self, root_images):
         shapes=[]
@@ -240,6 +240,8 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
         num_epochs=1
     else:
         num_epochs=1000
+    if(save_model_path is not None):
+        os.makedirs(save_model_path, exist_ok=True)
     ds_train=MyDataset(images_path, info_points,mode="train",  transform=create_transforms(config, "train"))
     dl_train=data.DataLoader(
         ds_train, 
@@ -252,7 +254,8 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
     loss_fn=torch.nn.MSELoss().to(config.DEVICE)#TODO Another Loss
     optimizer=torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE)
     train_losses = []
-    for e in range(num_epochs):
+    best_val_loss=1000
+    for e in tqdm(range(num_epochs), total=num_epochs, desc="Training..."):
         model.train()
         train_loss=[]
         for x_batch, y_batch in dl_train:
@@ -272,15 +275,18 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
             f"train_loss: {(train_loss):.8f}",
         )
         # if(e%100==0 or e==num_epochs-1):
-        if(e%5==0):
-            if(save_model_path is None):
-                model_path="models/facepoint_model_40.pth"
-            else:
-                model_path=f"{save_model_path}/facepoint_model_{e}.pth"
+        if(e%5==0 and save_model_path is not None):
+            model_path=f"{save_model_path}/facepoints_model_check.pt"
             torch.save(model.state_dict(), model_path)
             detected=detect(model_path=model_path, images_path=images_path, config=config)
             ds_valid=MyDataset(images_path, info_points,mode="valid", transform=create_transforms(config, "valid"))
-            evaluate_detect(ds_valid, detected)
+            val_loss_now=evaluate_detect(ds_valid, detected)
+            if(val_loss_now<best_val_loss):
+                model_path=f"{save_model_path}/facepoints_model.pt"
+                torch.save(model.state_dict(), model_path)
+                best_val_loss=val_loss_now
+            print(f"Valid Loss: {val_loss_now}, Best Loss is {best_val_loss}")
+
 
 def detect(model_path:str, images_path:str, config=Config()):
     model=MyModel(config)
@@ -291,11 +297,19 @@ def detect(model_path:str, images_path:str, config=Config()):
     ds_valid=MyDataset(images_path,images_info=None, mode="all", transform=create_transforms(config, "valid"))
     model.eval()
     ans={}
-    for img_path,  image in ds_valid:
+    for i, (img_path,  image) in enumerate(ds_valid):
         x_batch = image.unsqueeze(0).to(config.DEVICE)
+        shape=ds_valid.shapes[i]
         with torch.no_grad():
             p_batch = model(x_batch)
-        ans[os.path.basename(img_path)] = p_batch.detach().cpu().numpy().squeeze()
+        result_batch=[]
+        p_batch=p_batch.detach().cpu().numpy().squeeze()
+        for i, (x,y) in enumerate(p_batch.reshape(-1, 2)):
+            x*=(shape[1]/config.WINDOW_SIZE[1])
+            y*=(shape[0]/config.WINDOW_SIZE[0])
+            result_batch.append(x)
+            result_batch.append(y)
+        ans[os.path.basename(img_path)] =result_batch 
     return ans
     
     
@@ -306,10 +320,18 @@ def detect(model_path:str, images_path:str, config=Config()):
 def evaluate_detect(dataset, detected):
     valid_losses=[]
     for ind, (_, label) in enumerate(dataset):
-        label=label.reshape(-1)
-        loss=np.mean((label-detected[os.path.basename(dataset.paths[ind])])**2)
+        pred=np.array(detected[os.path.basename(dataset.paths[ind])])
+        gt=label.reshape(-1)
+        pred_reshaped=[]
+        shape=dataset.shapes[ind]
+        for i, (x,y) in enumerate(pred.reshape(-1, 2)):
+            x/=(shape[1]/config.WINDOW_SIZE[1])
+            y/=(shape[0]/config.WINDOW_SIZE[0])
+            pred_reshaped.append(x)
+            pred_reshaped.append(y)
+        loss=np.mean((np.array(pred_reshaped)-np.array(gt))**2)
         valid_losses.append(loss.item())
-    print(f"Valid Accs: {sum(valid_losses)/len(valid_losses)}")
+    return sum(valid_losses)/len(valid_losses)
 
 #------------------------------------------------------------
 #MAIN FUNCTION
@@ -321,7 +343,7 @@ if __name__=="__main__":
     predict_dir="./"
     config=Config()
     model_path="facepoints_model.pt"
-    train_detector(get_info_points(file_points), images_path=image_dir, fast_train=True, config=config, save_model_path="models")
+    train_detector(get_info_points(file_points), images_path=image_dir, fast_train=False, config=config, save_model_path="models")
     detected=detect(model_path=model_path, images_path=image_dir, config=config)
     ds_valid=MyDataset(image_dir, get_info_points(file_points),mode="valid", transform=create_transforms(config, "valid"))
     evaluate_detect(ds_valid, detected)
