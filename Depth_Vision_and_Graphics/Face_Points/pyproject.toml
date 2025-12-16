@@ -2,14 +2,27 @@
 name = "face-points"
 version = "0.1.0"
 requires-python = ">=3.10,<3.12"
+
 dependencies = [
-    "albumentations>=1.4,<2.0",
-    "numpy<2.0",
-    "opencv-python",
-    "pandas",
-    "pillow",
+    # Core
+    "setuptools>=65",
+    "packaging>=23",
+
+    # DL (Pascal / Tesla P100 compatible)
     "torch==2.1.2",
     "torchvision==0.16.2",
     "torchaudio==2.1.2",
+
+    # Vision & data
+    "albumentations>=1.4,<2.0",
+    "opencv-python",
+    "pillow",
+    "numpy<2.0",
+    "pandas",
+
+    # Utils
     "tqdm",
+
+    # Optional but safe (script backend)
+    "matplotlib>=3.8,<3.10",
 ]
