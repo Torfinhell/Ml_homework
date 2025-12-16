@@ -20,7 +20,7 @@ class Config:
     WINDOW_SIZE=(100, 100)
     LAST_LINEAR_SIZE=3800
     BATCH_SIZE=256
-    DEVICE=torch.device("cuda") if(torch.cuda.is_available()) else torch.device("cpu")
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LEFT_RIGHT_PAIRS=[(0,3), (1, 2), (4, 9), (5, 8), (6, 7), (10, 10), (12, 12), (11, 13)]
     MEAN=np.array([129.79718 , 103.865166,  90.321625], dtype=np.float32)
     STD=np.array([65.72256 , 58.388615, 54.779205], dtype=np.float32)
@@ -28,6 +28,7 @@ class Config:
     SCALE_LIMIT=0.05
     SHIFT_LIMIT=0.05
     LEARNING_RATE=1e-3
+    ACCUM_STEP=1
 
 
 
@@ -106,14 +107,14 @@ def create_transforms(config,partition:str="train"):
              A.Resize(height=config.WINDOW_SIZE[0], width=config.WINDOW_SIZE[1]),
             A.Lambda(image=flip_image, keypoints=flip_keypoints_partial, p=0.5),
             A.ShiftScaleRotate(shift_limit=config.SHIFT_LIMIT, scale_limit=config.SCALE_LIMIT, rotate_limit=config.ROTATE_LIMIT, p=0.5),
-            A.Normalize(mean=MEAN_STD[0].tolist(), std=MEAN_STD[1].tolist()),
             A.Lambda(image=gray2rgb_if_needed),
+            A.Normalize(mean=MEAN_STD[0].tolist(), std=MEAN_STD[1].tolist()),
             ToTensorV2()
         ], keypoint_params=A.KeypointParams(format="xy", remove_invisible=False))
     return A.Compose([
             A.Resize(height=config.WINDOW_SIZE[0], width=config.WINDOW_SIZE[1]),
-            A.Normalize(mean=MEAN_STD[0].tolist(), std=MEAN_STD[1].tolist()),
             A.Lambda(image=gray2rgb_if_needed),
+            A.Normalize(mean=MEAN_STD[0].tolist(), std=MEAN_STD[1].tolist()),
             ToTensorV2()
         ], keypoint_params=A.KeypointParams(format="xy", remove_invisible=False))
 def reverse_transform(config, ): #for validateMEAN_STD=(config.MEAN, config.STD)
@@ -251,12 +252,14 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
     model=MyModel(config).to(config.DEVICE)
     loss_fn=torch.nn.MSELoss().to(config.DEVICE)#TODO Another Loss
     optimizer=torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE)
+    scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     train_losses = []
     best_val_loss=1000
     for e in tqdm(range(num_epochs), total=num_epochs, desc="Training..."):
         model.train()
         train_loss=[]
-        for x_batch, y_batch in dl_train:
+        optimizer.zero_grad()
+        for i, (x_batch, y_batch) in enumerate(dl_train):
             x_batch=x_batch.to(config.DEVICE)
             y_batch=y_batch.to(torch.float32)
             y_batch=y_batch.reshape(y_batch.shape[0], -1).to(config.DEVICE)
@@ -264,8 +267,10 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
             loss=loss_fn(p_batch, y_batch)
             train_loss.append(loss.item())
             loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
+            if((i+1)%config.ACCUM_STEP==0):
+                optimizer.step()
+                optimizer.zero_grad()
+        scheduler.step()
         train_loss=sum(train_loss)/len(train_loss)
         train_losses.append(train_loss)
         print(
@@ -278,7 +283,7 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
             torch.save(model.state_dict(), model_path)
             detected=detect(model_path=model_path, images_path=images_path, config=config)
             ds_valid=MyDataset(images_path, info_points,mode="valid", transform=create_transforms(config, "valid"))
-            val_loss_now=evaluate_detect(ds_valid, detected)
+            val_loss_now=evaluate_detect(ds_valid, detected, config)
             if(val_loss_now<best_val_loss):
                 model_path=f"{save_model_path}/facepoints_model.pt"
                 torch.save(model.state_dict(), model_path)
@@ -315,7 +320,7 @@ def detect(model_path:str, images_path:str, config=Config()):
 
 #------------------------------------------------------
 #EVALUATION
-def evaluate_detect(dataset, detected):
+def evaluate_detect(dataset, detected, config):
     valid_losses=[]
     for ind, (_, label) in enumerate(dataset):
         pred=np.array(detected[os.path.basename(dataset.paths[ind])])
