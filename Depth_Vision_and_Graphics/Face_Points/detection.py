@@ -30,6 +30,8 @@ class Config:
     LEARNING_RATE=4e-3
     ACCUM_STEP=1
     NUM_WORKERS=os.cpu_count()
+    LOG_STEP=100
+    NUM_EPOCHS=3000
 
 
 
@@ -240,7 +242,7 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
         num_epochs=1
         config.BATCH_SIZE=8
     else:
-        num_epochs=1000
+        num_epochs=config.NUM_EPOCHS
     if(save_model_path is not None):
         os.makedirs(save_model_path, exist_ok=True)
     ds_train=MyDataset(images_path, info_points,mode="train",  transform=create_transforms(config, "train"))
@@ -284,7 +286,7 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
             f"train_loss: {(train_loss):.8f}",
         )
         # if(e%100==0 or e==num_epochs-1):
-        if(e%5==0 and save_model_path is not None):
+        if(e%config.LOG_STEP==0 and save_model_path is not None):
             model_path=f"{save_model_path}/facepoints_model_check.pt"
             torch.save(model.state_dict(), model_path)
             detected=detect(model_path=model_path, images_path=images_path, config=config)
