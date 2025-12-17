@@ -25,10 +25,10 @@ class Config:
     MEAN=np.array([129.79718 , 103.865166,  90.321625], dtype=np.float32)
     STD=np.array([65.72256 , 58.388615, 54.779205], dtype=np.float32)
     ROTATE_LIMIT=45
-    SCALE_LIMIT=0.05
-    SHIFT_LIMIT=0.05
+    SCALE_LIMIT=0.1
+    SHIFT_LIMIT=0.1
     LEARNING_RATE=4e-3
-    ACCUM_STEP=1
+    ACCUM_STEP=4
     NUM_WORKERS=os.cpu_count()
     LOG_STEP=100
     NUM_EPOCHS=3000
@@ -275,9 +275,7 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
             if((i+1)%config.ACCUM_STEP==0):
                 optimizer.step()
                 optimizer.zero_grad()
-        if (i + 1) % config.ACCUM_STEP == 0:
-            optimizer.step()
-            optimizer.zero_grad()
+        optimizer.zero_grad()
         scheduler.step()
         train_loss=sum(train_loss)/len(train_loss)
         train_losses.append(train_loss)
