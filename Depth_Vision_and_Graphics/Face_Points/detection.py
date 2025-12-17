@@ -32,37 +32,60 @@ class Config:
     NUM_WORKERS=os.cpu_count()
     LOG_STEP=100
     NUM_EPOCHS=3000
+    NUM_BLOCKS=3
 
 
 
 #-----------------------------------------------------------
 
 #MODEL
-class MyModel(nn.Sequential): # TODO Change architechture for somrthing better maybe, maybe read the paper
-    def __init__(self, config):
+import torch
+import torch.nn as nn
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-    
-        self.conv1=nn.Conv2d(3, 128, 5, padding=2)
-        self.bn1=nn.BatchNorm2d(128)
-        self.relu1=nn.ReLU()
-        self.maxpooling1=nn.MaxPool2d(2)
-        self.conv2=nn.Conv2d(128, 256, 3, padding=1)
-        self.bn2=nn.BatchNorm2d(256)
-        self.relu2=nn.ReLU()
-        self.maxpooling2=nn.MaxPool2d(2)
-        self.conv3=nn.Conv2d(256, 512, 3, padding=1)
-        self.bn3=nn.BatchNorm2d(512)
-        self.relu3=nn.ReLU()
-        self.maxpooling3=nn.MaxPool2d(2)
-        self.conv4=nn.Conv2d(512, 512, 3, padding=1)
-        self.bn4=nn.BatchNorm2d(512)
-        self.relu4=nn.ReLU()
-        self.maxpooling4=nn.MaxPool2d(2)
-        self.flatten=nn.Flatten()
-        self.dense=nn.Linear( 512* (config.WINDOW_SIZE[0]//16) * (config.WINDOW_SIZE[1]//16), config.LAST_LINEAR_SIZE)
-        self.relu5=nn.ReLU()
-        self.dropout=nn.Dropout(0.2)
-        self.dense1=nn.Linear(config.LAST_LINEAR_SIZE, 28)
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class MyModel(nn.Module):
+    def __init__(self, config:Config):
+        super().__init__()
+
+        channels = [3]
+        for i in range(config.NUM_BLOCKS):
+            channels.append(min(128 * (2 ** i), 512))
+
+        self.blocks = nn.ModuleList([
+            ConvBlock(channels[i], channels[i + 1])
+            for i in range(config.NUM_BLOCKS)
+        ])
+
+        downscale = 2 ** config.NUM_BLOCKS
+        h = config.WINDOW_SIZE[0] // downscale
+        w = config.WINDOW_SIZE[1] // downscale
+
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(channels[-1] * h * w, config.LAST_LINEAR_SIZE),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(config.LAST_LINEAR_SIZE, 28)
+        )
+
+    def forward(self, x):
+        for block in self.blocks:
+            x = block(x)
+        return self.classifier(x)
+
     
 
 
