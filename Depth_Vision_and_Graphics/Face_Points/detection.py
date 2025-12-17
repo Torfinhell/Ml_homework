@@ -19,7 +19,7 @@ from functools import partial
 class Config:
     WINDOW_SIZE=(100, 100)
     LAST_LINEAR_SIZE=3800
-    BATCH_SIZE=256
+    BATCH_SIZE=512
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LEFT_RIGHT_PAIRS=[(0,3), (1, 2), (4, 9), (5, 8), (6, 7), (10, 10), (12, 12), (11, 13)]
     MEAN=np.array([129.79718 , 103.865166,  90.321625], dtype=np.float32)
@@ -27,8 +27,9 @@ class Config:
     ROTATE_LIMIT=45
     SCALE_LIMIT=0.05
     SHIFT_LIMIT=0.05
-    LEARNING_RATE=1e-3
+    LEARNING_RATE=8e-3
     ACCUM_STEP=1
+    NUM_WORKERS=os.cpu_count()
 
 
 
@@ -237,6 +238,7 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
         torch.cuda.empty_cache()
     if(fast_train):
         num_epochs=1
+        config.BATCH_SIZE=8
     else:
         num_epochs=1000
     if(save_model_path is not None):
@@ -247,7 +249,7 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
         batch_size=config.BATCH_SIZE,
         shuffle=True,
         drop_last=True,
-        num_workers=os.cpu_count(),
+        num_workers=config.NUM_WORKERS,
     )
     model=MyModel(config).to(config.DEVICE)
     loss_fn=torch.nn.MSELoss().to(config.DEVICE)#TODO Another Loss
@@ -265,11 +267,15 @@ def train_detector(info_points:dict[str, np.array], images_path:str,config=Confi
             y_batch=y_batch.reshape(y_batch.shape[0], -1).to(config.DEVICE)
             p_batch=model(x_batch)
             loss=loss_fn(p_batch, y_batch)
+            loss = loss / config.ACCUM_STEP
             train_loss.append(loss.item())
             loss.backward()
             if((i+1)%config.ACCUM_STEP==0):
                 optimizer.step()
                 optimizer.zero_grad()
+        if (i + 1) % config.ACCUM_STEP == 0:
+            optimizer.step()
+            optimizer.zero_grad()
         scheduler.step()
         train_loss=sum(train_loss)/len(train_loss)
         train_losses.append(train_loss)
