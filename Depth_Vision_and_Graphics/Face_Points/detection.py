@@ -18,8 +18,8 @@ from functools import partial
 #PARAMETRS
 class Config:
     WINDOW_SIZE=(100, 100)
-    LAST_LINEAR_SIZE=950
-    BATCH_SIZE=8
+    LAST_LINEAR_SIZE=6000
+    BATCH_SIZE=256
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LEFT_RIGHT_PAIRS=[(0,3), (1, 2), (4, 9), (5, 8), (6, 7), (10, 10), (12, 12), (11, 13)]
     MEAN=np.array([129.79718 , 103.865166,  90.321625], dtype=np.float32)
@@ -32,7 +32,7 @@ class Config:
     NUM_WORKERS=os.cpu_count()
     LOG_STEP=100
     NUM_EPOCHS=2000
-    NUM_BLOCKS=3
+    NUM_BLOCKS=5
 
 
 
