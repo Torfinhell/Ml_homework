@@ -31,7 +31,7 @@ class Config:
     ACCUM_STEP=1
     NUM_WORKERS=os.cpu_count()
     LOG_STEP=100
-    NUM_EPOCHS=2000
+    NUM_EPOCHS=1200
     NUM_BLOCKS=5
 
 
